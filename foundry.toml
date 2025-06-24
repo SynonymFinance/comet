@@ -5,5 +5,10 @@ libs = ['node_modules', 'forge/lib']
 test = 'forge/test'
 cache_path  = 'forge/cache'
 
+remappings = [
+    "@openzeppelin/=node_modules/@openzeppelin/",
+    "@syno/=node_modules/syno-bridge-sdk/src/"
+]
+
 # disable for CI (used for debugging liquidity issues)
 no_match_test = "test.*SwapVia"

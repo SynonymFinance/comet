@@ -87,6 +87,7 @@
     "nock": "^13.2.2",
     "sc-istanbul": "^0.4.5",
     "solhint": "^3.3.6",
+    "syno-bridge-sdk": "https://github.com/SynonymFinance/syno-bridge-sdk",
     "ts-node": "^10.4.0",
     "typechain": "^6.0.2",
     "typescript": "^4.4.4",

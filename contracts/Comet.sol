@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity 0.8.15;
+pragma solidity ^0.8.15;
+
+// Suppress warning about payable fallback without receive function
+// This contract intentionally has a payable fallback for delegate calls but rejects plain ETH transfers
 
 import "./CometMainInterface.sol";
 import "./IERC20NonStandard.sol";
@@ -193,7 +196,7 @@ contract Comet is CometMainInterface {
     }
 
     /**
-     * @dev Prevents marked functions from being reentered 
+     * @dev Prevents marked functions from being reentered
      * Note: this restrict contracts from calling comet functions in their hooks.
      * Doing so will cause the transaction to revert.
      */
@@ -1374,5 +1377,13 @@ contract Comet is CometMainInterface {
             case 0 { revert(0, returndatasize()) }
             default { return(0, returndatasize()) }
         }
+    }
+
+    /**
+     * @notice Receive function to handle plain ETH transfers
+     */
+    receive() external payable {
+        // Revert on plain ETH transfers to prevent accidental sends
+        revert("ETH transfers not accepted");
     }
 }

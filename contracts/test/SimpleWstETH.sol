@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity 0.8.15;
+pragma solidity ^0.8.15;
 
 contract SimpleWstETH {
     uint8 public constant decimals = 18;

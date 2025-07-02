@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity 0.8.15;
+pragma solidity ^0.8.15;
 
 import "../vendor/@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 import "../IERC4626.sol";
@@ -84,7 +84,7 @@ contract PriceFeedWith4626Support is IPriceFeed {
         if (n > uint256(type(int256).max)) revert InvalidInt256();
         return int256(n);
     }
-    
+
     /**
      * @notice Price for the latest round
      * @return The version of the price feed contract

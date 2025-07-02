@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity 0.8.15;
+pragma solidity ^0.8.15;
 
 import "./CometMainInterface.sol";
 import "./IERC20NonStandard.sol";
@@ -102,7 +102,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
 
     /// @notice Factor to divide by when accruing rewards in order to preserve 6 decimals (i.e. baseScale / 1e6)
     uint internal immutable accrualDescaleFactor;
-    
+
     /// @notice The address of the asset list
     address immutable public assetList;
 
@@ -163,7 +163,7 @@ contract CometWithExtendedAssetList is CometMainInterface {
     }
 
     /**
-     * @dev Prevents marked functions from being reentered 
+     * @dev Prevents marked functions from being reentered
      * Note: this restrict contracts from calling comet functions in their hooks.
      * Doing so will cause the transaction to revert.
      */

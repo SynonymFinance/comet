@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity 0.8.15;
+pragma solidity ^0.8.15;
 
 import "./BaseBulker.sol";
 import "../IWstETH.sol";
@@ -93,7 +93,7 @@ contract MainnetBulkerWithWstETHSupport is BaseBulker {
         uint unwrappedStETHAmount = IWstETH(wsteth).unwrap(wstETHAmount);
         doTransferOut(steth, to, unwrappedStETHAmount);
     }
-    
+
     /**
      * @notice Submits received ether to get stETH and wraps it to wstETH, received wstETH is transferred to Comet
      */

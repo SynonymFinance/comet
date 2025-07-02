@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity 0.8.15;
+pragma solidity ^0.8.15;
 
 import "./IPriceFeed.sol";
 import "./IERC20NonStandard.sol";
@@ -71,11 +71,11 @@ contract AssetList {
 
     /// @notice The number of assets this contract actually supports
     uint8 public immutable numAssets;
-    
+
     constructor(CometConfiguration.AssetConfig[] memory assetConfigs) {
         uint8 _numAssets = uint8(assetConfigs.length);
         numAssets = _numAssets;
-        
+
         (asset00_a, asset00_b) = getPackedAssetInternal(assetConfigs, 0);
         (asset01_a, asset01_b) = getPackedAssetInternal(assetConfigs, 1);
         (asset02_a, asset02_b) = getPackedAssetInternal(assetConfigs, 2);

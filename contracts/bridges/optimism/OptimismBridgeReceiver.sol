@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: BUSL-1.1
-pragma solidity 0.8.15;
+pragma solidity ^0.8.15;
 
 import "../SweepableBridgeReceiver.sol";
 import "./IOvmL2CrossDomainMessengerInterface.sol";

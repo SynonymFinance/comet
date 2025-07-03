@@ -17,7 +17,7 @@ import { SynoBridgeAction } from "../../contracts/bridges/SynoBridgeStructs.sol"
 import { BaseWormholeTunnelTest, ActiveFork } from "@syno/testing/BaseWormholeTunnelTest.t.sol";
 import "@syno/Utils.sol";
 
-contract SynoBridgeTest is BaseWormholeTunnelTest {
+contract SynoBridgeCCTPTest is BaseWormholeTunnelTest {
     // hub-side contracts
     CometInterface public comet;
     SynoBridge synoBridge;

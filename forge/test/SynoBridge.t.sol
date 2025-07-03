@@ -35,12 +35,22 @@ contract SynoBridgeTest is BaseWormholeTunnelTest {
     address public COMET_ADDR;
     address public SYNO_BRIDGE_ADDR;
 
+    modifier retainFork() {
+        uint256 forkId = vm.activeFork();
+        _;
+        switchToFork(forkId);
+    }
+
     function setUp() public virtual override {
         vm.recordLogs();
         super.setUp();
         switchToHub();
+        vm.deal(USER, 1 ether);
         synoBridge.setSynoVault(spokeFork.chainId, toWormholeFormat(address(synoVault)));
+        vm.prank(USER);
+        comet.allow(address(synoBridge), true);
         switchToSpoke();
+        vm.deal(USER, 1 ether);
         synoVault.setSynoBridge(hubFork.chainId, SYNO_BRIDGE_ADDR);
     }
 
@@ -50,6 +60,7 @@ contract SynoBridgeTest is BaseWormholeTunnelTest {
             setUpComet();
             synoBridge = new SynoBridge(address(this), address(tunnels[hubFork.chainId]));
             SYNO_BRIDGE_ADDR = address(synoBridge);
+            vm.label(SYNO_BRIDGE_ADDR, "SynoBridge");
         } else {
             ProxyAdmin proxyAdmin = new ProxyAdmin(address(this));
             SynoVault implementation = new SynoVault();
@@ -66,6 +77,7 @@ contract SynoBridgeTest is BaseWormholeTunnelTest {
                 initData
             ));
             synoVault = SynoVault(payable(proxy));
+            vm.label(address(synoVault), "SynoVault");
         }
     }
 
@@ -78,7 +90,7 @@ contract SynoBridgeTest is BaseWormholeTunnelTest {
             borrowCollateralFactor: 9e17,
             liquidateCollateralFactor: 93e16,
             liquidationFactor: 95e16,
-            supplyCap: 0
+            supplyCap: 100e18
         });
 
         CometExt ext = new CometExt(CometConfiguration.ExtConfiguration({
@@ -113,30 +125,109 @@ contract SynoBridgeTest is BaseWormholeTunnelTest {
         ))));
         comet.initializeStorage();
         COMET_ADDR = address(comet);
+        vm.label(COMET_ADDR, "Comet");
     }
 
-    function approveBridgeAsUser(address _user) internal {
-        vm.prank(_user);
-        comet.allow(address(synoBridge), true);
-    }
-
-    function testCrossChainSupply() public {
-        uint256 amount = 1e6;
-        switchToHub();
-        approveBridgeAsUser(USER);
+    function supplyAsUser(address user_, IERC20 token_, uint256 amount_) internal retainFork {
         switchToSpoke();
-        vm.deal(USER, 1 ether);
-        mintUSDC(spokeFork.chainId, USER, amount);
-        switchToSpoke();
-        vm.startPrank(USER);
-        usdcIERC20(spokeFork).approve(address(synoVault), amount);
+        vm.startPrank(user_);
+        token_.approve(address(synoVault), amount_);
         uint256 cost = synoVault.getSupplyCost();
-        synoVault.userActions{value: cost}(COMET_ADDR, SynoBridgeAction.SUPPLY, usdcIERC20(spokeFork), amount, 0);
+        synoVault.userActions{value: cost}(COMET_ADDR, SynoBridgeAction.SUPPLY, token_, amount_, 0);
         vm.stopPrank();
         deliverMessages();
+    }
+
+    function withdrawAsUser(address user_, IERC20 token_, uint256 amount_) internal retainFork {
+        switchToHub();
+        uint256 returnMessageCost = synoBridge.getReturnMessageCost(spokeFork.chainId);
+        switchToSpoke();
+        vm.startPrank(user_);
+        token_.approve(address(synoVault), amount_);
+        uint256 cost = synoVault.getWithdrawCost(returnMessageCost);
+        synoVault.userActions{value: cost}(COMET_ADDR, SynoBridgeAction.WITHDRAW, token_, amount_, returnMessageCost);
+        vm.stopPrank();
+        deliverMessages();
+        switchToHub();
+        deliverMessages();
+    }
+
+    function postCollateralAsUser(address user_, IERC20 token_, uint256 amount_) internal retainFork {
+        switchToHub();
+        vm.startPrank(user_);
+        token_.approve(address(comet), amount_);
+        comet.supply(address(token_), amount_);
+        vm.stopPrank();
+    }
+
+    // test cases
+
+    function testCrossChainSupply() public {
+        uint256 amount = 100e6;
+        switchToSpoke();
+        mintUSDC(spokeFork.chainId, USER, amount);
+        supplyAsUser(USER, usdcIERC20(spokeFork), amount);
+
+        switchToHub();
+        assertEq(usdcIERC20(hubFork).balanceOf(COMET_ADDR), amount, "comet did not receive usdc");
+        assertEq(comet.balanceOf(USER), amount, "user not credited with base token");
+    }
+
+    function testCrossChainWithdraw() public {
+        uint256 amount = 100e6;
+        switchToSpoke();
+        mintUSDC(spokeFork.chainId, USER, amount);
+        supplyAsUser(USER, usdcIERC20(spokeFork), amount);
+
+        assertEq(usdcIERC20(spokeFork).balanceOf(USER), 0, "user did not send usdc");
+
         switchToHub();
         assertEq(usdcIERC20(hubFork).balanceOf(COMET_ADDR), amount, "comet did not receive usdc");
         assertEq(comet.balanceOf(USER), amount, "user not credited with base token");
 
+        // USER now has a base token balance
+        // test withdrawal
+        switchToSpoke();
+        withdrawAsUser(USER, usdcIERC20(spokeFork), amount);
+        assertEq(usdcIERC20(spokeFork).balanceOf(USER), amount, "user did not receive usdc");
+
+        switchToHub();
+        assertEq(usdcIERC20(hubFork).balanceOf(COMET_ADDR), 0, "comet did not send usdc");
+        assertEq(comet.balanceOf(USER), 0, "user not debited with base token");
+    }
+
+    function testCrossChainBorrowAndRepay() public {
+        uint256 amount = 100e6;
+        switchToSpoke();
+        mintUSDC(spokeFork.chainId, USER, amount);
+        supplyAsUser(USER, usdcIERC20(spokeFork), amount);
+
+        // borrow
+
+        address borrower = address(0x2020202020202020202020202020202020202020);
+        vm.deal(borrower, 1 ether);
+        switchToHub();
+        vm.deal(borrower, 2 ether);
+        IWETH weth = IWETH(ARBITRUM_WETH9);
+        vm.startPrank(borrower);
+        weth.deposit{value: 1 ether}();
+        comet.allow(address(synoBridge), true);
+        vm.stopPrank();
+        postCollateralAsUser(borrower, IERC20(address(weth)), 1 ether);
+
+        switchToSpoke();
+        withdrawAsUser(borrower, usdcIERC20(spokeFork), amount);
+        assertEq(usdcIERC20(spokeFork).balanceOf(borrower), amount, "borrower did not receive usdc");
+
+        switchToHub();
+        assertEq(usdcIERC20(hubFork).balanceOf(COMET_ADDR), 0, "comet did not send usdc");
+        assertEq(comet.borrowBalanceOf(borrower), amount, "borrower did not borrow usdc");
+
+        // repay
+        switchToSpoke();
+        supplyAsUser(borrower, usdcIERC20(spokeFork), amount);
+        switchToHub();
+        assertEq(usdcIERC20(hubFork).balanceOf(COMET_ADDR), amount, "comet did not receive usdc");
+        assertEq(comet.borrowBalanceOf(borrower), 0, "borrower did not repay usdc");
     }
 }

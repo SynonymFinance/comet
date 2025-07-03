@@ -21,7 +21,7 @@ contract SynoBridge is ISynoBridge {
     address public admin;
     IWormholeTunnel public wormholeTunnel;
     mapping(uint16 => bytes32) public synoVaults;
-    uint256 public RELEASE_FUNDS_GAS_LIMIT = 150_000;
+    uint256 public RELEASE_FUNDS_GAS_LIMIT = 175_000;
 
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event SynoVaultSet(uint16 indexed chainId, bytes32 indexed synoVault);
@@ -95,9 +95,11 @@ contract SynoBridge is ISynoBridge {
             );
             if (msg.value < returnMessageCost) revert InsufficientMsgValue();
 
+            IERC20 thisChainAsset = IERC20(wormholeTunnel.getTokenAddressOnThisChain(source_.chainId, message.asset));
+
             // process the withdrawal
-            IComet(message.comet).withdrawFrom(message.recipient, address(this), address(asset_), amount_);
-            asset_.approve(address(wormholeTunnel), amount_);
+            IComet(message.comet).withdrawFrom(message.recipient, address(this), address(thisChainAsset), message.amount);
+            thisChainAsset.approve(address(wormholeTunnel), message.amount);
 
             // send the funds to the user
             IWormholeTunnel.TunnelMessage memory tunnelMessage;
@@ -112,8 +114,8 @@ contract SynoBridge is ISynoBridge {
                 selector: 0x0, // zero selector indicating no function call
                 payload: bytes("") // no payload required since no call is made
             });
-            tunnelMessage.token = toWormholeFormat(address(asset_));
-            tunnelMessage.amount = amount_;
+            tunnelMessage.token = toWormholeFormat(address(thisChainAsset));
+            tunnelMessage.amount = message.amount;
             // any repaid msg.value will be received by the refundRecipient
             wormholeTunnel.sendEvmMessage{value: msg.value}(tunnelMessage, RELEASE_FUNDS_GAS_LIMIT);
         } else {

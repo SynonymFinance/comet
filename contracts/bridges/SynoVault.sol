@@ -125,7 +125,7 @@ contract SynoVault is Initializable, OwnableUpgradeable, PausableUpgradeable {
         message.target.payload = abi.encode(SynoBridgeMessage({
             action: action,
             comet: comet,
-            asset: address(asset),
+            asset: toWormholeFormat(address(asset)),
             amount: amount,
             recipient: msg.sender
         }));

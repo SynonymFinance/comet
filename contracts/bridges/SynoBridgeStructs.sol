@@ -9,7 +9,7 @@ enum SynoBridgeAction {
 struct SynoBridgeMessage {
     SynoBridgeAction action;
     address comet;
-    address asset;
+    bytes32 asset;
     uint256 amount;
     address recipient;
 }

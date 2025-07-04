@@ -83,7 +83,7 @@ contract SynoVault is Initializable, OwnableUpgradeable, PausableUpgradeable {
         synoBridge = synoBridge_;
     }
 
-    function userActions(address comet, SynoBridgeAction action, IERC20 asset, uint256 amount, uint256 costForReturnDelivery) external payable {
+    function userActions(address comet, SynoBridgeAction action, IERC20 asset, uint256 amount, uint256 costForReturnDelivery) external payable whenNotPaused {
         if (action == SynoBridgeAction.SUPPLY) {
             if (costForReturnDelivery > 0) {
                 revert InvalidDeliveryCost();

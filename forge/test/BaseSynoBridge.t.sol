@@ -12,22 +12,18 @@ import { Comet } from "../../contracts/Comet.sol";
 import { CometConfiguration } from "../../contracts/CometConfiguration.sol";
 import { CometExt } from "../../contracts/CometExt.sol";
 import { SynoBridge } from "../../contracts/bridges/SynoBridge.sol";
-import { SynoVault } from "../../contracts/bridges/SynoVault.sol";
-import { SynoBridgeAction } from "../../contracts/bridges/SynoBridgeStructs.sol";
+import { ISynoBridge } from "../../contracts/bridges/ISynoBridge.sol";
 import { BaseWormholeTunnelTest, ActiveFork } from "@syno/testing/BaseWormholeTunnelTest.t.sol";
 import "@syno/Utils.sol";
 
 abstract contract BaseSynoBridgeTest is BaseWormholeTunnelTest {
     // hub-side contracts
     CometInterface public comet;
-    SynoBridge synoBridge;
+    mapping(uint16 => ISynoBridge) public bridges;
     address public constant ARBITRUM_WETH9 = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
     address public constant ETHEREUM_WETH9 = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant ARBITRUM_WETH_PRICE_FEED = 0x639Fe6ab55C921f74e7fac1ee960C0B6293ba612;
     address public constant ARBITRUM_USDC_PRICE_FEED = 0x50834F3163758fcC1Df9973b6e91f0F0F0434aD3;
-
-    // spoke-side contracts
-    SynoVault synoVault;
 
     // users
     address public constant USER = address(0x1010101010101010101010101010101010101010);
@@ -47,38 +43,20 @@ abstract contract BaseSynoBridgeTest is BaseWormholeTunnelTest {
         super.setUp();
         switchToHub();
         vm.deal(USER, 1 ether);
-        synoBridge.setSynoVault(spokeFork.chainId, toWormholeFormat(address(synoVault)));
+        bridges[hubFork.chainId].setSynoBridge(spokeFork.chainId, toWormholeFormat(address(bridges[spokeFork.chainId])));
         vm.prank(USER);
-        comet.allow(address(synoBridge), true);
+        comet.allow(address(bridges[hubFork.chainId]), true);
         switchToSpoke();
         vm.deal(USER, 1 ether);
-        synoVault.setSynoBridge(hubFork.chainId, SYNO_BRIDGE_ADDR);
+        bridges[spokeFork.chainId].setSynoBridge(hubFork.chainId, toWormholeFormat(address(bridges[hubFork.chainId])));
     }
 
     function setUpFork(ActiveFork memory fork) public virtual override {
         super.setUpFork(fork);
+        address weth = fork.chainId == hubFork.chainId ? ARBITRUM_WETH9 : ETHEREUM_WETH9;
+        bridges[fork.chainId] = new SynoBridge(address(this), address(tunnels[fork.chainId]), weth);
         if (fork.chainId == hubFork.chainId) {
             setUpComet();
-            synoBridge = new SynoBridge(address(this), address(tunnels[hubFork.chainId]));
-            SYNO_BRIDGE_ADDR = address(synoBridge);
-            vm.label(SYNO_BRIDGE_ADDR, "SynoBridge");
-        } else {
-            ProxyAdmin proxyAdmin = new ProxyAdmin(address(this));
-            SynoVault implementation = new SynoVault();
-            bytes memory initData = abi.encodeWithSelector(
-                SynoVault.initialize.selector,
-                hubFork.chainId,
-                address(synoBridge),
-                tunnels[spokeFork.chainId],
-                IWETH(ETHEREUM_WETH9)
-            );
-            address proxy = address(new TransparentUpgradeableProxy(
-                address(implementation),
-                address(proxyAdmin),
-                initData
-            ));
-            synoVault = SynoVault(payable(proxy));
-            vm.label(address(synoVault), "SynoVault");
         }
     }
 
@@ -88,21 +66,21 @@ abstract contract BaseSynoBridgeTest is BaseWormholeTunnelTest {
     function supplyAsUser(address user_, IERC20 token_, uint256 amount_) internal retainFork {
         switchToSpoke();
         vm.startPrank(user_);
-        token_.approve(address(synoVault), amount_);
-        uint256 cost = synoVault.getSupplyCost();
-        synoVault.userActions{value: cost}(COMET_ADDR, SynoBridgeAction.SUPPLY, token_, amount_, 0);
+        token_.approve(address(bridges[spokeFork.chainId]), amount_);
+        uint256 cost = bridges[spokeFork.chainId].getSupplyCost(hubFork.chainId);
+        bridges[spokeFork.chainId].userActions{value: cost}(hubFork.chainId, COMET_ADDR, ISynoBridge.SynoBridgeAction.SUPPLY, token_, amount_, 0);
         vm.stopPrank();
         deliverMessages();
     }
 
     function withdrawAsUser(address user_, IERC20 token_, uint256 amount_) internal retainFork {
         switchToHub();
-        uint256 returnMessageCost = synoBridge.getReturnMessageCost(spokeFork.chainId);
+        uint256 returnMessageCost = bridges[hubFork.chainId].getReturnMessageCost(spokeFork.chainId);
         switchToSpoke();
         vm.startPrank(user_);
-        token_.approve(address(synoVault), amount_);
-        uint256 cost = synoVault.getWithdrawCost(returnMessageCost);
-        synoVault.userActions{value: cost}(COMET_ADDR, SynoBridgeAction.WITHDRAW, token_, amount_, returnMessageCost);
+        token_.approve(address(bridges[spokeFork.chainId]), amount_);
+        uint256 cost = bridges[spokeFork.chainId].getWithdrawCost(hubFork.chainId, returnMessageCost);
+        bridges[spokeFork.chainId].userActions{value: cost}(hubFork.chainId, COMET_ADDR, ISynoBridge.SynoBridgeAction.WITHDRAW, token_, amount_, returnMessageCost);
         vm.stopPrank();
         deliverMessages();
         switchToHub();

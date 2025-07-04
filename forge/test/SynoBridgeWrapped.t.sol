@@ -68,7 +68,7 @@ contract SynoBridgeWrappedTest is BaseSynoBridgeTest {
         IWETH weth = IWETH(ETHEREUM_WETH9);
         vm.startPrank(USER);
         weth.deposit{value: amount}();
-        weth.approve(address(synoVault), amount);
+        weth.approve(address(bridges[spokeFork.chainId]), amount);
         vm.stopPrank();
         supplyAsUser(USER, IERC20(address(weth)), amount);
 
@@ -91,7 +91,7 @@ contract SynoBridgeWrappedTest is BaseSynoBridgeTest {
         IWETH weth = IWETH(ETHEREUM_WETH9);
         vm.startPrank(USER);
         weth.deposit{value: amount}();
-        weth.approve(address(synoVault), amount);
+        weth.approve(address(bridges[spokeFork.chainId]), amount);
         vm.stopPrank();
         supplyAsUser(USER, IERC20(address(weth)), amount);
 
@@ -105,7 +105,7 @@ contract SynoBridgeWrappedTest is BaseSynoBridgeTest {
         IERC20 hubUsdc = usdcIERC20(hubFork);
         vm.startPrank(borrower);
         hubUsdc.approve(address(comet), collateralAmount);
-        comet.allow(address(synoBridge), true);
+        comet.allow(address(bridges[hubFork.chainId]), true);
         vm.stopPrank();
         postCollateralAsUser(borrower, hubUsdc, collateralAmount);
 

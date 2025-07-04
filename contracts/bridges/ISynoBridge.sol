@@ -5,8 +5,25 @@ import { IWormholeTunnel } from "@syno/interfaces/IWormholeTunnel.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ISynoBridge {
+    enum SynoBridgeAction {
+        SUPPLY,
+        WITHDRAW
+    }
+
+    struct SynoBridgeMessage {
+        SynoBridgeAction action;
+        address comet;
+        bytes32 asset;
+        uint256 amount;
+        address recipient;
+    }
+
+    function getActionCost(SynoBridgeAction action, uint16 cometChainId, uint256 costForReturnDelivery) external view returns (uint256);
+    function getSupplyCost(uint16 cometChainId) external view returns (uint256);
+    function getWithdrawCost(uint16 cometChainId, uint256 costForReturnDelivery) external view returns (uint256);
+    function userActions(uint16 cometChainId, address comet, SynoBridgeAction action, IERC20 asset, uint256 amount, uint256 costForReturnDelivery) external payable;
     function setWormholeTunnel(address wormholeTunnel_) external;
-    function setSynoVault(uint16 chainId_, bytes32 synoVault_) external;
+    function setSynoBridge(uint16 chainId_, bytes32 synoBridge_) external;
     function getReturnMessageCost(uint16 chainId_) external view returns (uint256);
     function receiveSynoBridgeMessage(
         IWormholeTunnel.MessageSource calldata source_,

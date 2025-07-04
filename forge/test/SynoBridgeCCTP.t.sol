@@ -111,7 +111,7 @@ contract SynoBridgeCCTPTest is BaseSynoBridgeTest {
         IWETH weth = IWETH(ARBITRUM_WETH9);
         vm.startPrank(borrower);
         weth.deposit{value: 1 ether}();
-        comet.allow(address(synoBridge), true);
+        comet.allow(address(bridges[hubFork.chainId]), true);
         vm.stopPrank();
         postCollateralAsUser(borrower, IERC20(address(weth)), 1 ether);
 

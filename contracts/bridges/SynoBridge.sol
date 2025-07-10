@@ -20,8 +20,9 @@ contract SynoBridge is ISynoBridge {
     address public admin;
     IWormholeTunnel public wormholeTunnel;
     mapping(uint16 => bytes32) public bridges;
-    uint256 public releaseFundsGasLimit = 175_000;
-    uint256 public cometActionGasLimit = 500_000;
+    uint256 public releaseFundsGasLimit = 250_000;
+    uint256 public cometSupplyGasLimit = 500_000;
+    uint256 public cometWithdrawGasLimit = 700_000;
     IWETH public weth;
 
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
@@ -87,8 +88,16 @@ contract SynoBridge is ISynoBridge {
         emit WormholeTunnelSet(wormholeTunnel_);
     }
 
-    function setCometActionGasLimit(uint256 value) external onlyAdmin {
-        cometActionGasLimit = value;
+    function setCometSupplyGasLimit(uint256 value) external onlyAdmin {
+        cometSupplyGasLimit = value;
+    }
+
+    function setCometWithdrawGasLimit(uint256 value) external onlyAdmin {
+        cometWithdrawGasLimit = value;
+    }
+
+    function setReleaseFundsGasLimit(uint256 value) external onlyAdmin {
+        releaseFundsGasLimit = value;
     }
 
     function setSynoBridge(uint16 synoBridgeChainId_, bytes32 synoBridge_) external override onlyAdmin {
@@ -110,11 +119,11 @@ contract SynoBridge is ISynoBridge {
     }
 
     function getSupplyCost(uint16 cometChainId) public view returns (uint256) {
-        return wormholeTunnel.getMessageCost(cometChainId, cometActionGasLimit, 0, true);
+        return wormholeTunnel.getMessageCost(cometChainId, cometSupplyGasLimit, 0, true);
     }
 
     function getWithdrawCost(uint16 cometChainId, uint256 costForReturnDelivery) public view returns (uint256) {
-        return wormholeTunnel.getMessageCost(cometChainId, cometActionGasLimit, costForReturnDelivery, false);
+        return wormholeTunnel.getMessageCost(cometChainId, cometWithdrawGasLimit, costForReturnDelivery, false);
     }
 
     function receiveSynoBridgeMessage(
@@ -162,8 +171,14 @@ contract SynoBridge is ISynoBridge {
             });
             tunnelMessage.token = toWormholeFormat(address(thisChainAsset));
             tunnelMessage.amount = message.amount;
-            // any repaid msg.value will be received by the refundRecipient
-            wormholeTunnel.sendEvmMessage{value: msg.value}(tunnelMessage, releaseFundsGasLimit);
+            wormholeTunnel.sendEvmMessage{value: returnMessageCost}(tunnelMessage, releaseFundsGasLimit);
+            if (msg.value > returnMessageCost) {
+                // send any overpaid eth to message.recipient
+                (bool success, ) = message.recipient.call{value: msg.value - returnMessageCost}("");
+                if (!success) {
+                    revert FailedToSendNativeToken();
+                }
+            }
         } else {
             revert InvalidBridgeMessage();
         }
@@ -192,7 +207,14 @@ contract SynoBridge is ISynoBridge {
         sendMessage(cometChainId, comet, action, asset, amount, costForReturnDelivery);
     }
 
-    function sendMessage(uint16 cometChainId, address comet, ISynoBridge.SynoBridgeAction action, IERC20 asset, uint256 amount, uint256 costForReturnDelivery) internal {
+    function sendMessage(
+        uint16 cometChainId,
+        address comet,
+        ISynoBridge.SynoBridgeAction action,
+        IERC20 asset,
+        uint256 amount,
+        uint256 costForReturnDelivery
+    ) internal {
         IWormholeTunnel.TunnelMessage memory message;
 
         message.source.refundRecipient = toWormholeFormat(msg.sender);
@@ -210,19 +232,24 @@ contract SynoBridge is ISynoBridge {
         }));
 
         uint256 cost;
+        uint256 gasLimit;
         if (action == ISynoBridge.SynoBridgeAction.SUPPLY) {
             message.token = toWormholeFormat(address(asset));
             message.amount = amount;
-            cost = wormholeTunnel.getMessageCost(cometChainId, cometActionGasLimit, 0, true);
+            message.finality = IWormholeTunnel.MessageFinality.FINALIZED;
+            cost = getSupplyCost(cometChainId);
+            gasLimit = cometSupplyGasLimit;
         } else if (action == ISynoBridge.SynoBridgeAction.WITHDRAW) {
-            cost = wormholeTunnel.getMessageCost(cometChainId, cometActionGasLimit, costForReturnDelivery, false);
+            message.finality = IWormholeTunnel.MessageFinality.INSTANT;
+            cost = getWithdrawCost(cometChainId, costForReturnDelivery);
+            gasLimit = cometWithdrawGasLimit;
         }
 
         if (msg.value < cost) {
             revert InsufficientMsgValue();
         }
 
-        wormholeTunnel.sendEvmMessage{value: cost}(message, cometActionGasLimit);
+        wormholeTunnel.sendEvmMessage{value: cost}(message, gasLimit);
 
         // return any overpaid msg.value
         if (msg.value > cost) {

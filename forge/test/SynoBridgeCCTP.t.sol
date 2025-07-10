@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.0;
 
-import {IWETH} from "@syno/interfaces/IWETH.sol";
+import {IWETH} from "syno-bridge-sdk/src/interfaces/IWETH.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 import { CometInterface } from "../../contracts/CometInterface.sol";
@@ -9,7 +9,7 @@ import { Comet } from "../../contracts/Comet.sol";
 import { CometConfiguration } from "../../contracts/CometConfiguration.sol";
 import { CometExt } from "../../contracts/CometExt.sol";
 import { BaseSynoBridgeTest } from "./BaseSynoBridge.t.sol";
-import "@syno/Utils.sol";
+import "syno-bridge-sdk/src/Utils.sol";
 
 contract SynoBridgeCCTPTest is BaseSynoBridgeTest {
 

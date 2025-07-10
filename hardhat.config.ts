@@ -15,6 +15,7 @@ import 'hardhat-gas-reporter';
 import './tasks/deployment_manager/task.ts';
 import './tasks/spider/task.ts';
 import './tasks/scenario/task.ts';
+import './tasks/deploy-syno-bridge.ts';
 
 // Relation Config
 import relationConfigMap from './deployments/relations';
@@ -203,7 +204,7 @@ function setupDefaultNetworkProviders(hardhatConfig: HardhatUserConfig) {
  */
 const config: HardhatUserConfig = {
   solidity: {
-    version: '0.8.15',
+    version: '0.8.28',
     settings: {
       optimizer: (
         process.env['OPTIMIZER_DISABLED'] ? { enabled: false } : {

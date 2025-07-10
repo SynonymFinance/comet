@@ -2,7 +2,7 @@
 pragma solidity ^0.8.0;
 
 import "forge-std/Test.sol";
-import {IWETH} from "@syno/interfaces/IWETH.sol";
+import {IWETH} from "syno-bridge-sdk/src/interfaces/IWETH.sol";
 import {TransparentUpgradeableProxy} from "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 import {ProxyAdmin} from "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -13,8 +13,8 @@ import { CometConfiguration } from "../../contracts/CometConfiguration.sol";
 import { CometExt } from "../../contracts/CometExt.sol";
 import { SynoBridge } from "../../contracts/bridges/SynoBridge.sol";
 import { ISynoBridge } from "../../contracts/bridges/ISynoBridge.sol";
-import { BaseWormholeTunnelTest, ActiveFork } from "@syno/testing/BaseWormholeTunnelTest.t.sol";
-import "@syno/Utils.sol";
+import { BaseWormholeTunnelTest, ActiveFork } from "syno-bridge-sdk/src/testing/BaseWormholeTunnelTest.t.sol";
+import "syno-bridge-sdk/src/Utils.sol";
 
 abstract contract BaseSynoBridgeTest is BaseWormholeTunnelTest {
     // hub-side contracts

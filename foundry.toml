@@ -7,7 +7,7 @@ cache_path  = 'forge/cache'
 
 remappings = [
     "@openzeppelin/=node_modules/@openzeppelin/",
-    "@syno/=node_modules/syno-bridge-sdk/src/"
+    "syno-bridge-sdk/=node_modules/syno-bridge-sdk/"
 ]
 
 # disable for CI (used for debugging liquidity issues)

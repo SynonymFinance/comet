@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.0;
 
-import { IWETH } from "@syno/interfaces/IWETH.sol";
-import { IWormholeTunnel } from "@syno/interfaces/IWormholeTunnel.sol";
+import { IWETH } from "syno-bridge-sdk/src/interfaces/IWETH.sol";
+import { IWormholeTunnel } from "syno-bridge-sdk/src/interfaces/IWormholeTunnel.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { ISynoBridge } from "./ISynoBridge.sol";
 
-import "@syno/Utils.sol";
+import "syno-bridge-sdk/src/Utils.sol";
 
 interface IComet {
     function supplyTo(address dst, address asset, uint amount) external;

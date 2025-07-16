@@ -130,4 +130,30 @@ contract SynoBridgeCCTPTest is BaseSynoBridgeTest {
         assertEq(usdcIERC20(hubFork).balanceOf(COMET_ADDR), amount, "comet did not receive usdc");
         assertEq(comet.borrowBalanceOf(borrower), 0, "borrower did not repay usdc");
     }
+
+    function testWithdrawToChain() public {
+        uint256 amount = 100e6;
+        mintUSDC(spokeFork.chainId, USER, amount);
+        supplyAsUser(USER, usdcIERC20(spokeFork), amount);
+        assertEq(usdcIERC20(spokeFork).balanceOf(USER), 0, "user should no longer have usdc");
+
+        switchToHub();
+        assertEq(usdcIERC20(hubFork).balanceOf(COMET_ADDR), amount, "comet did not receive usdc");
+        assertEq(comet.balanceOf(USER), amount, "user not credited with base token");
+
+        uint256 cost = bridges[hubFork.chainId].getReturnMessageCost(spokeFork.chainId);
+        vm.startPrank(USER);
+        bridges[hubFork.chainId].withdrawToChain{value: cost}(
+            COMET_ADDR,
+            address(hubFork.USDC),
+            amount,
+            spokeFork.chainId,
+            toWormholeFormat(USER)
+        );
+        vm.stopPrank();
+        deliverMessages();
+
+        switchToSpoke();
+        assertEq(usdcIERC20(spokeFork).balanceOf(USER), amount, "user did not receive usdc");
+    }
 }

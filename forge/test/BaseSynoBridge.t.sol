@@ -44,8 +44,10 @@ abstract contract BaseSynoBridgeTest is BaseWormholeTunnelTest {
         switchToHub();
         vm.deal(USER, 1 ether);
         bridges[hubFork.chainId].setSynoBridge(spokeFork.chainId, toWormholeFormat(address(bridges[spokeFork.chainId])));
-        vm.prank(USER);
-        comet.allow(address(bridges[hubFork.chainId]), true);
+        if (address(comet) != address(0)) {
+            vm.prank(USER);
+            comet.allow(address(bridges[hubFork.chainId]), true);
+        }
         switchToSpoke();
         vm.deal(USER, 1 ether);
         bridges[spokeFork.chainId].setSynoBridge(hubFork.chainId, toWormholeFormat(address(bridges[hubFork.chainId])));

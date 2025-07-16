@@ -125,4 +125,36 @@ contract SynoBridgeWrappedTest is BaseSynoBridgeTest {
         assertEq(whWeth.balanceOf(COMET_ADDR), amount, "comet did not receive whWeth");
         assertEq(comet.borrowBalanceOf(borrower), 0, "borrower did not repay whWeth");
     }
+
+    function testWithdrawToChainBridged() public {
+        uint256 amount = 0.1 ether;
+        IWETH weth = IWETH(ETHEREUM_WETH9);
+        vm.startPrank(USER);
+        weth.deposit{value: amount}();
+        weth.approve(address(bridges[spokeFork.chainId]), amount);
+        vm.stopPrank();
+        supplyAsUser(USER, IERC20(address(weth)), amount);
+        assertEq(weth.balanceOf(USER), 0, "user should no longer have weth");
+
+        switchToHub();
+
+        IERC20 whWeth = IERC20(tunnels[hubFork.chainId].getTokenAddressOnThisChain(spokeFork.chainId, toWormholeFormat(ETHEREUM_WETH9)));
+        assertEq(whWeth.balanceOf(COMET_ADDR), amount, "comet did not receive whWeth");
+        assertEq(comet.balanceOf(USER), amount, "user not credited with base token");
+
+        uint256 cost = bridges[hubFork.chainId].getReturnMessageCost(spokeFork.chainId);
+        vm.startPrank(USER);
+        bridges[hubFork.chainId].withdrawToChain{value: cost}(
+            COMET_ADDR,
+            address(whWeth),
+            amount,
+            spokeFork.chainId,
+            toWormholeFormat(USER)
+        );
+        vm.stopPrank();
+        deliverMessages();
+
+        switchToSpoke();
+        assertEq(weth.balanceOf(USER), amount, "user did not receive usdc");
+    }
 }

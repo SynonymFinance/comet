@@ -142,43 +142,17 @@ contract SynoBridge is ISynoBridge {
             asset_.approve(message.comet, amount_);
             IComet(message.comet).supplyTo(message.recipient, address(asset_), amount_);
         } else if (message.action == ISynoBridge.SynoBridgeAction.WITHDRAW) {
-            uint256 returnMessageCost = wormholeTunnel.getMessageCost(
-                source_.chainId,
-                releaseFundsGasLimit,
-                0, // no return messages, so no receiver value
-                true // with token transfer
-            );
-            if (msg.value < returnMessageCost) revert InsufficientMsgValue();
-
             IERC20 thisChainAsset = IERC20(wormholeTunnel.getTokenAddressOnThisChain(source_.chainId, message.asset));
 
             // process the withdrawal
             IComet(message.comet).withdrawFrom(message.recipient, address(this), address(thisChainAsset), message.amount);
-            thisChainAsset.approve(address(wormholeTunnel), message.amount);
-
-            // send the funds to the user
-            IWormholeTunnel.TunnelMessage memory tunnelMessage;
-            tunnelMessage.source = IWormholeTunnel.MessageSource({
-                chainId: wormholeTunnel.chainId(),
-                sender: toWormholeFormat(address(this)),
-                refundRecipient: source_.refundRecipient
-            });
-            tunnelMessage.target = IWormholeTunnel.MessageTarget({
-                chainId: source_.chainId,
-                recipient: toWormholeFormat(message.recipient),
-                selector: 0x0, // zero selector indicating no function call
-                payload: bytes("") // no payload required since no call is made
-            });
-            tunnelMessage.token = toWormholeFormat(address(thisChainAsset));
-            tunnelMessage.amount = message.amount;
-            wormholeTunnel.sendEvmMessage{value: returnMessageCost}(tunnelMessage, releaseFundsGasLimit);
-            if (msg.value > returnMessageCost) {
-                // send any overpaid eth to message.recipient
-                (bool success, ) = message.recipient.call{value: msg.value - returnMessageCost}("");
-                if (!success) {
-                    revert FailedToSendNativeToken();
-                }
-            }
+            sendReleaseFundsMessage(
+                source_.chainId,
+                toWormholeFormat(message.recipient),
+                address(thisChainAsset),
+                message.amount,
+                address(0) // no sender since this is a return message
+            );
         } else {
             revert InvalidBridgeMessage();
         }
@@ -205,6 +179,61 @@ contract SynoBridge is ISynoBridge {
         }
 
         sendMessage(cometChainId, comet, action, asset, amount, costForReturnDelivery);
+    }
+
+    function withdrawToChain(address comet, address asset, uint256 amount, uint16 targetChain, bytes32 recipient) external payable override {
+        if (comet == address(0) || asset == address(0) || amount == 0) revert InvalidBridgeMessage();
+        // process the withdrawal
+        IComet(comet).withdrawFrom(msg.sender, address(this), asset, amount);
+        sendReleaseFundsMessage(
+            targetChain,
+            recipient,
+            asset,
+            amount,
+            msg.sender
+        );
+    }
+
+    function sendReleaseFundsMessage(
+        uint16 chainId,
+        bytes32 recipient,
+        address asset,
+        uint256 amount,
+        address sender
+    ) internal {
+        uint256 returnMessageCost = wormholeTunnel.getMessageCost(
+            chainId,
+            releaseFundsGasLimit,
+            0, // no return messages, so no receiver value
+            true // with token transfer
+        );
+        if (msg.value < returnMessageCost) revert InsufficientMsgValue();
+
+        IERC20(asset).approve(address(wormholeTunnel), amount);
+
+        // send the funds to the user
+        IWormholeTunnel.TunnelMessage memory tunnelMessage;
+        tunnelMessage.source = IWormholeTunnel.MessageSource({
+            chainId: wormholeTunnel.chainId(),
+            sender: toWormholeFormat(address(this)),
+            refundRecipient: recipient
+        });
+        tunnelMessage.target = IWormholeTunnel.MessageTarget({
+            chainId: chainId,
+            recipient: recipient,
+            selector: 0x0, // zero selector indicating no function call
+            payload: bytes("") // no payload required since no call is made
+        });
+        tunnelMessage.token = toWormholeFormat(asset);
+        tunnelMessage.amount = amount;
+        wormholeTunnel.sendEvmMessage{value: returnMessageCost}(tunnelMessage, releaseFundsGasLimit);
+        if (msg.value > returnMessageCost && sender != address(0)) {
+            // send any overpaid eth to sender
+            (bool success, ) = sender.call{value: msg.value - returnMessageCost}("");
+            if (!success) {
+                revert FailedToSendNativeToken();
+            }
+        }
     }
 
     function sendMessage(
@@ -257,6 +286,24 @@ contract SynoBridge is ISynoBridge {
             if (!success) {
                 revert FailedToSendNativeToken();
             }
+        }
+    }
+
+    function withdrawFromBridge(address asset, uint256 amount, address recipient) external override onlyAdmin {
+        if (asset == address(0)) {
+            if (amount > address(this).balance) {
+                amount = address(this).balance;
+            }
+            (bool success, ) = recipient.call{value: amount}("");
+            if (!success) {
+                revert FailedToSendNativeToken();
+            }
+        } else {
+            IERC20 assetIERC20 = IERC20(asset);
+            if (amount > assetIERC20.balanceOf(address(this))) {
+                amount = assetIERC20.balanceOf(address(this));
+            }
+            assetIERC20.safeTransfer(recipient, amount);
         }
     }
 }

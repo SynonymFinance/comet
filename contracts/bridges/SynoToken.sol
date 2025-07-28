@@ -42,8 +42,4 @@ contract SynoToken is ERC20 {
     function burn(address from, uint256 amount) external onlyVault {
         _burn(from, amount);
     }
-
-    function vaultApprove(address owner, address spender, uint256 amount) external onlyVault {
-        _approve(owner, spender, amount);
-    }
 }

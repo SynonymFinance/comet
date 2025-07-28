@@ -7,7 +7,7 @@ import { BaseSynoVaultTest } from "./BaseSynoVault.t.sol";
 import "syno-bridge-sdk/src/Utils.sol";
 
 // tests generic non-market functions of the bridge
-contract SynoBridgeTest is BaseSynoVaultTest {
+contract SynoVaultTest is BaseSynoVaultTest {
     function setUpComet() internal virtual override {
         // no comet for this test
     }

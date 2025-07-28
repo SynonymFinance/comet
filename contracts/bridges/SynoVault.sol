@@ -12,6 +12,7 @@ import "syno-bridge-sdk/src/Utils.sol";
 
 contract SynoVault is ISynoVault {
     using SafeERC20 for IERC20;
+    using SafeERC20 for SynoToken;
 
     address public admin;
     IWormholeTunnel public wormholeTunnel;
@@ -29,6 +30,7 @@ contract SynoVault is ISynoVault {
     event AdminTransferred(address indexed oldAdmin, address indexed newAdmin);
     event SynoVaultSet(uint16 indexed chainId, bytes32 indexed synoVault);
     event WormholeTunnelSet(address indexed wormholeTunnel);
+    event ContractCallFailed(bytes returnData);
 
     error FailedToSendNativeToken();
     error InsufficientMsgValue();
@@ -133,23 +135,55 @@ contract SynoVault is ISynoVault {
         SynoVaultTransferMessage memory message = abi.decode(payload, (SynoVaultTransferMessage));
         if (message.asset.id == bytes32(0) || message.amount == 0 || message.recipient == bytes32(0)) revert InvalidMessage();
 
+        address recipient = fromWormholeFormat(message.recipient);
+
         // check if contract for asset exists
         AssetState storage assetState = assetStates[message.asset.id];
-        if (assetState.info.id == bytes32(0)) {
+        bool newAsset = assetState.info.id == bytes32(0);
+        if (newAsset) {
             assetState.info = message.asset;
             assetState.tokenContract = new SynoToken(message.asset.name, message.asset.symbol, message.asset.decimals);
             contractToAssetId[address(assetState.tokenContract)] = message.asset.id;
-        }
 
-        address recipient = fromWormholeFormat(message.recipient);
-        assetState.tokenContract.mint(recipient, message.amount);
+            if (message.withdrawToUnderlyingToken) {
+                // this is probably a misconfiguration
+                // since this is a new asset, there can be no underlying token for the asset on this chain yet
+                // if the user chose to withdraw, then the contract call will fail
+                // and the user will have to manually withdraw the SynoToken
+                // fallback to minting the SynoToken and ignoring any contract calls
+                assetState.tokenContract.mint(recipient, message.amount);
+                return;
+            }
+        }
 
         SynoVaultContractCall memory contractCall = abi.decode(message.encodedContractCall, (SynoVaultContractCall));
         if (contractCall.target != address(0)) {
-            assetState.tokenContract.vaultApprove(recipient, contractCall.target, message.amount);
-            (bool success, ) = contractCall.target.call(contractCall.payload);
+            if (message.withdrawToUnderlyingToken) {
+                assetState.underlyingToken.approve(contractCall.target, message.amount);
+            } else {
+                assetState.tokenContract.mint(address(this), message.amount);
+                assetState.tokenContract.approve(contractCall.target, message.amount);
+            }
+            (bool success, bytes memory returnData) = contractCall.target.call(contractCall.payload);
             if (!success) {
-                assetState.tokenContract.vaultApprove(recipient, contractCall.target, 0);
+                // the contract call failed
+                // revoke the approvals
+                // transfer the token to the recipient
+                if (message.withdrawToUnderlyingToken) {
+                    assetState.underlyingToken.approve(contractCall.target, 0);
+                    assetState.underlyingToken.safeTransfer(recipient, message.amount);
+                } else {
+                    assetState.tokenContract.approve(contractCall.target, 0);
+                    assetState.tokenContract.safeTransfer(recipient, message.amount);
+                }
+                emit ContractCallFailed(returnData);
+            }
+        } else {
+            // no contract call, just mint or transfer the underlying token to the recipient
+            if (message.withdrawToUnderlyingToken) {
+                assetState.underlyingToken.safeTransfer(recipient, message.amount);
+            } else {
+                assetState.tokenContract.mint(recipient, message.amount);
             }
         }
     }
@@ -161,7 +195,8 @@ contract SynoVault is ISynoVault {
         bytes32 recipient,
         bytes memory encodedContractCall,
         uint256 contractCallGasLimit,
-        bool synoTokenExistsOnTargetChain
+        bool synoTokenExistsOnTargetChain,
+        bool withdrawToUnderlyingToken
     ) internal {
         IWormholeTunnel.TunnelMessage memory message;
 
@@ -175,7 +210,8 @@ contract SynoVault is ISynoVault {
             asset: assetStates[assetId].info,
             amount: amount,
             recipient: recipient,
-            encodedContractCall: encodedContractCall
+            encodedContractCall: encodedContractCall,
+            withdrawToUnderlyingToken: withdrawToUnderlyingToken
         }));
 
         uint256 gasLimit = getGasLimit(contractCallGasLimit, synoTokenExistsOnTargetChain);
@@ -219,17 +255,67 @@ contract SynoVault is ISynoVault {
         }
     }
 
-    function transfer(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, bool synoTokenExistsOnTargetChain) external payable override {
-        transferAndCall(asset, targetChain, recipient, amount, SynoVaultContractCall({target: address(0), payload: bytes("")}), 0, synoTokenExistsOnTargetChain);
+    function transfer(address asset, uint16 targetChain, bytes32 recipient, uint256 amount) public payable override {
+        transfer(asset, targetChain, recipient, amount, false, false);
     }
 
-    function transferAndCall(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, SynoVaultContractCall memory contractCall, uint256 contractCallGasLimit, bool synoTokenExistsOnTargetChain) public payable override {
+    function transfer(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, bool synoTokenExistsOnTargetChain) public payable override {
+        transfer(asset, targetChain, recipient, amount, synoTokenExistsOnTargetChain, false);
+    }
+
+    function transfer(
+        address asset,
+        uint16 targetChain,
+        bytes32 recipient,
+        uint256 amount,
+        bool synoTokenExistsOnTargetChain,
+        bool withdrawToUnderlyingToken
+    ) public payable override {
+        transferAndCall(
+            asset,
+            targetChain,
+            recipient,
+            amount,
+            SynoVaultContractCall({target: address(0), payload: bytes("")}),
+            0,
+            synoTokenExistsOnTargetChain,
+            withdrawToUnderlyingToken
+        );
+    }
+
+    function transferAndCall(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, SynoVaultContractCall calldata contractCall, uint256 contractCallGasLimit) external payable {
+        transferAndCall(asset, targetChain, recipient, amount, contractCall, contractCallGasLimit, false, false);
+    }
+
+    function transferAndCall(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, SynoVaultContractCall calldata contractCall, uint256 contractCallGasLimit, bool synoTokenExistsOnTargetChain) external payable {
+        transferAndCall(asset, targetChain, recipient, amount, contractCall, contractCallGasLimit, synoTokenExistsOnTargetChain, false);
+    }
+
+    function transferAndCall(
+        address asset,
+        uint16 targetChain,
+        bytes32 recipient,
+        uint256 amount,
+        SynoVaultContractCall memory contractCall,
+        uint256 contractCallGasLimit,
+        bool synoTokenExistsOnTargetChain,
+        bool withdrawToUnderlyingToken
+    ) public payable override {
         if (contractToAssetId[asset] == bytes32(0)) {
             revert InvalidAssetId();
         }
         // burn the amount of the underlying token
         assetStates[contractToAssetId[asset]].tokenContract.burn(msg.sender, amount);
-        transferInternal(targetChain, contractToAssetId[asset], amount, recipient, abi.encode(contractCall), contractCallGasLimit, synoTokenExistsOnTargetChain);
+        transferInternal(
+            targetChain,
+            contractToAssetId[asset],
+            amount,
+            recipient,
+            abi.encode(contractCall),
+            contractCallGasLimit,
+            synoTokenExistsOnTargetChain,
+            withdrawToUnderlyingToken
+        );
     }
 
     function addAsset(AssetInfo calldata info, address underlyingToken) external override onlyAdmin {

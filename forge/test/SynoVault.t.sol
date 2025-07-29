@@ -2,6 +2,7 @@
 pragma solidity ^0.8.0;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { IWETH } from "syno-bridge-sdk/src/interfaces/IWETH.sol";
 import { CometInterface } from "../../contracts/CometInterface.sol";
 import { Comet } from "../../contracts/Comet.sol";
 import { CometConfiguration } from "../../contracts/CometConfiguration.sol";
@@ -77,10 +78,12 @@ contract SynoVaultTest is BaseSynoVaultTest {
         vm.stopPrank();
 
         switchToHub();
-        mintUSDC(hubFork.chainId, MARKET_MAKER, mmAmount);
+        mintUSDC(hubFork.chainId, MARKET_MAKER, 2 * mmAmount);
         vm.startPrank(MARKET_MAKER);
         hubFork.USDC.approve(address(vaults[hubFork.chainId]), mmAmount);
         vaults[hubFork.chainId].deposit(address(hubFork.USDC), mmAmount);
+        hubFork.USDC.approve(COMET_ADDR, mmAmount);
+        comet.supplyTo(MARKET_MAKER, address(hubFork.USDC), mmAmount);
         vm.stopPrank();
 
         vm.prank(USER);
@@ -201,5 +204,66 @@ contract SynoVaultTest is BaseSynoVaultTest {
 
         switchToSpoke();
         assertEq(spokeFork.USDC.balanceOf(USER), amount, "user did not receive usdc");
+    }
+
+    function testSynoVaultBorrowAndRepay() public {
+        switchToHub();
+        uint256 collateralAmount = 0.5 ether;
+        uint256 borrowAmount = 100e6;
+        IWETH weth = IWETH(ARBITRUM_WETH9);
+        vm.startPrank(USER);
+        weth.deposit{value: collateralAmount}();
+        weth.approve(COMET_ADDR, collateralAmount);
+        comet.supplyTo(USER, address(weth), collateralAmount);
+        vm.stopPrank();
+
+        // borrow USDC through SynoVault
+        ISynoVault.SynoVaultContractCall memory borrowCall = ISynoVault.SynoVaultContractCall({
+            target: COMET_ADDR,
+            payload: abi.encodeWithSelector(Comet.withdrawFrom.selector, USER, address(vaults[hubFork.chainId]), address(hubFork.USDC), borrowAmount)
+        });
+        uint256 borrowCost = vaults[hubFork.chainId].getCost(spokeFork.chainId, 0, true);
+        vm.startPrank(USER);
+        vaults[hubFork.chainId].callAndTransfer{value:borrowCost}(
+            borrowCall,
+            address(hubFork.USDC),
+            borrowAmount,
+            spokeFork.chainId,
+            toWormholeFormat(USER),
+            true, // SynoToken exists on target chain
+            true // withdraw to underlying token (Spoke-side USDC)
+        );
+        vm.stopPrank();
+        assertEq(comet.borrowBalanceOf(USER), borrowAmount, "user did not borrow usdc");
+        deliverMessages();
+
+        switchToSpoke();
+        assertEq(spokeFork.USDC.balanceOf(USER), borrowAmount, "user did not receive usdc");
+
+        // repay USDC through SynoVault
+        ISynoVault.SynoVaultContractCall memory repayCall = ISynoVault.SynoVaultContractCall({
+            target: COMET_ADDR,
+            payload: abi.encodeWithSelector(Comet.supplyTo.selector, USER, address(hubFork.USDC), borrowAmount)
+        });
+        uint256 repayCost = vaults[spokeFork.chainId].getCost(hubFork.chainId, 200_000, true);
+        vm.startPrank(USER);
+        spokeFork.USDC.approve(address(vaults[spokeFork.chainId]), borrowAmount);
+        vaults[spokeFork.chainId].deposit(address(spokeFork.USDC), borrowAmount);
+        IERC20 synoSpokeUsdc = IERC20(vaults[spokeFork.chainId].getSynoTokenByUnderlyingToken(address(spokeFork.USDC)));
+        vaults[spokeFork.chainId].transferAndCall{value:repayCost}(
+            address(synoSpokeUsdc),
+            hubFork.chainId,
+            toWormholeFormat(USER),
+            borrowAmount,
+            repayCall,
+            200_000,
+            true, // SynoToken exists on target chain
+            true // withdraw to underlying token to repay native USDC
+        );
+        vm.stopPrank();
+        deliverMessages();
+
+        switchToHub();
+        assertEq(comet.borrowBalanceOf(USER), 0, "user did not repay usdc");
     }
 }

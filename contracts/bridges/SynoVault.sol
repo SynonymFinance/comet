@@ -49,6 +49,9 @@ contract SynoVault is ISynoVault {
     error AssetAlreadyExists();
     error UnderlyingTokenNotSet();
     error InvalidAsset();
+    error InvalidContractCall();
+    error InvalidAmount();
+    error ContractCallFailedFatal(bytes returnData);
 
     modifier onlyWormholeTunnel() {
         if (msg.sender != address(wormholeTunnel)) {
@@ -316,6 +319,79 @@ contract SynoVault is ISynoVault {
             synoTokenExistsOnTargetChain,
             withdrawToUnderlyingToken
         );
+    }
+
+    function callAndTransfer(SynoVaultContractCall calldata contractCall, address asset, uint256 amount, uint16 targetChain, bytes32 recipient) external payable {
+        callAndTransfer(contractCall, asset, amount, targetChain, recipient, false, false);
+    }
+
+    function callAndTransfer(SynoVaultContractCall calldata contractCall, address asset, uint256 amount, uint16 targetChain, bytes32 recipient, bool synoTokenExistsOnTargetChain) external payable {
+        callAndTransfer(contractCall, asset, amount, targetChain, recipient, synoTokenExistsOnTargetChain, false);
+    }
+
+    function callAndTransfer(
+        SynoVaultContractCall calldata contractCall,
+        address asset,
+        uint256 amount,
+        uint16 targetChain,
+        bytes32 recipient,
+        bool synoTokenExistsOnTargetChain,
+        bool withdrawToUnderlyingToken
+    ) public payable override {
+        if (contractCall.target == address(0)) {
+            revert InvalidContractCall();
+        }
+        bytes32 assetId = contractToAssetId[asset];
+        bool isSynoToken = assetId != bytes32(0);
+        if (!isSynoToken) {
+            assetId = underlyingTokenToAssetId[asset];
+            if (assetId == bytes32(0)) {
+                revert InvalidAssetId();
+            }
+        }
+        if (amount == 0) {
+            revert InvalidAmount();
+        }
+
+        uint256 transferCost = getCost(targetChain, 0, synoTokenExistsOnTargetChain);
+        if (msg.value < transferCost) {
+            revert InsufficientMsgValue();
+        }
+
+        IERC20 assetIERC20 = IERC20(asset);
+        uint256 balanceBeforeCall = assetIERC20.balanceOf(address(this));
+        (bool success, bytes memory returnData) = contractCall.target.call(contractCall.payload);
+        if (!success) {
+            revert ContractCallFailedFatal(returnData);
+        }
+        uint256 balanceAfterCall = assetIERC20.balanceOf(address(this));
+        if (balanceAfterCall - balanceBeforeCall != amount) {
+            revert InvalidAmount();
+        }
+
+        if (!isSynoToken) {
+            // since the asset is already an underlying token, there's no need to do a burn
+            // use transferInternal instead of transfer
+            transferInternal(
+                targetChain,
+                assetId,
+                amount,
+                recipient,
+                abi.encode(SynoVaultContractCall({target: address(0), payload: bytes("")})), // no contract call
+                0,
+                synoTokenExistsOnTargetChain,
+                withdrawToUnderlyingToken
+            );
+        } else {
+            transfer(
+                address(assetStates[assetId].tokenContract),
+                targetChain,
+                recipient,
+                amount,
+                synoTokenExistsOnTargetChain,
+                withdrawToUnderlyingToken
+            );
+        }
     }
 
     function addAsset(AssetInfo calldata info, address underlyingToken) external override onlyAdmin {

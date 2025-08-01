@@ -50,6 +50,7 @@ interface ISynoVault {
     function transferAndCall(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, SynoVaultContractCall calldata contractCall, uint256 contractCallGasLimit) external payable;
     function transferAndCall(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, SynoVaultContractCall calldata contractCall, uint256 contractCallGasLimit, bool synoTokenExistsOnTargetChain) external payable;
     function transferAndCall(address asset, uint16 targetChain, bytes32 recipient, uint256 amount, SynoVaultContractCall calldata contractCall, uint256 contractCallGasLimit, bool synoTokenExistsOnTargetChain, bool withdrawToUnderlyingToken) external payable;
+    function depositAndTransfer(address asset, uint256 amount, uint16 targetChain, bytes32 recipient, SynoVaultContractCall calldata contractCall, uint256 contractCallGasLimit, bool synoTokenExistsOnTargetChain, bool withdrawToUnderlyingToken) external payable;
     function callAndTransfer(SynoVaultContractCall calldata contractCall, address asset, uint256 amount, uint16 targetChain, bytes32 recipient) external payable;
     function callAndTransfer(SynoVaultContractCall calldata contractCall, address asset, uint256 amount, uint16 targetChain, bytes32 recipient, bool synoTokenExistsOnTargetChain) external payable;
     function callAndTransfer(SynoVaultContractCall calldata contractCall, address asset, uint256 amount, uint16 targetChain, bytes32 recipient, bool synoTokenExistsOnTargetChain, bool withdrawToUnderlyingToken) external payable;

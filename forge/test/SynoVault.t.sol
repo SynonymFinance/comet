@@ -266,4 +266,36 @@ contract SynoVaultTest is BaseSynoVaultTest {
         switchToHub();
         assertEq(comet.borrowBalanceOf(USER), 0, "user did not repay usdc");
     }
+
+    function testDepositAndTransfer() public {
+        switchToSpoke();
+
+        uint256 amount = 100e6;
+        mintUSDC(spokeFork.chainId, USER, amount);
+
+        uint256 cometSupplyGasLimit = 200_000;
+        uint256 supplyCost = vaults[spokeFork.chainId].getCost(hubFork.chainId, cometSupplyGasLimit, true);
+        ISynoVault.SynoVaultContractCall memory supplyCall = ISynoVault.SynoVaultContractCall({
+            target: COMET_ADDR,
+            payload: abi.encodeWithSelector(Comet.supplyTo.selector, USER, address(hubFork.USDC), amount)
+        });
+
+        vm.startPrank(USER);
+        spokeFork.USDC.approve(address(vaults[spokeFork.chainId]), amount);
+        vaults[spokeFork.chainId].depositAndTransfer{value:supplyCost}(
+            address(spokeFork.USDC),
+            amount,
+            hubFork.chainId,
+            toWormholeFormat(USER),
+            supplyCall,
+            cometSupplyGasLimit,
+            true, // syno token exists on target chain
+            true // withdraw to underlying token before calling comet
+        );
+        vm.stopPrank();
+        deliverMessages();
+
+        switchToHub();
+        assertEq(comet.balanceOf(USER), amount, "user did not receive syno usdc");
+    }
 }

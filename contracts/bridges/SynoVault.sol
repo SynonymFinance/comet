@@ -321,6 +321,21 @@ contract SynoVault is ISynoVault {
         );
     }
 
+    function depositAndTransfer(address asset, uint256 amount, uint16 targetChain, bytes32 recipient, SynoVaultContractCall calldata contractCall, uint256 contractCallGasLimit, bool synoTokenExistsOnTargetChain, bool withdrawToUnderlyingToken) external payable override {
+        deposit(asset, amount);
+        bytes32 assetId = underlyingTokenToAssetId[asset];
+        transferAndCall(
+            address(assetStates[assetId].tokenContract),
+            targetChain,
+            recipient,
+            amount,
+            contractCall,
+            contractCallGasLimit,
+            synoTokenExistsOnTargetChain,
+            withdrawToUnderlyingToken
+        );
+    }
+
     function callAndTransfer(SynoVaultContractCall calldata contractCall, address asset, uint256 amount, uint16 targetChain, bytes32 recipient) external payable {
         callAndTransfer(contractCall, asset, amount, targetChain, recipient, false, false);
     }
@@ -451,7 +466,7 @@ contract SynoVault is ISynoVault {
         state.underlyingToken.safeTransfer(msg.sender, amount);
     }
 
-    function deposit(address asset, uint256 amount) external override {
+    function deposit(address asset, uint256 amount) public override {
         if (underlyingTokenToAssetId[asset] == bytes32(0)) {
             revert UnderlyingTokenNotSet();
         }

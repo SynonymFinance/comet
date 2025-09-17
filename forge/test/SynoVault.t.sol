@@ -17,6 +17,7 @@ contract SynoVaultTest is BaseSynoVaultTest {
     bytes32 public constant USDC_ASSET_ID = keccak256("USDC");
 
     address public constant MARKET_MAKER = address(0x2020202020202020202020202020202020202020);
+    uint256 public constant MM_INITIAL_BALANCE = 10_000e6;
 
 
     function setUpComet() internal virtual override {
@@ -68,22 +69,21 @@ contract SynoVaultTest is BaseSynoVaultTest {
 
     function setUp() public override {
         super.setUp();
-        uint256 mmAmount = 10_000e6;
 
         switchToSpoke();
-        mintUSDC(spokeFork.chainId, MARKET_MAKER, mmAmount);
+        mintUSDC(spokeFork.chainId, MARKET_MAKER, MM_INITIAL_BALANCE);
         vm.startPrank(MARKET_MAKER);
-        spokeFork.USDC.approve(address(vaults[spokeFork.chainId]), mmAmount);
-        vaults[spokeFork.chainId].deposit(address(spokeFork.USDC), mmAmount);
+        spokeFork.USDC.approve(address(vaults[spokeFork.chainId]), MM_INITIAL_BALANCE);
+        vaults[spokeFork.chainId].deposit(address(spokeFork.USDC), MM_INITIAL_BALANCE);
         vm.stopPrank();
 
         switchToHub();
-        mintUSDC(hubFork.chainId, MARKET_MAKER, 2 * mmAmount);
+        mintUSDC(hubFork.chainId, MARKET_MAKER, 2 * MM_INITIAL_BALANCE);
         vm.startPrank(MARKET_MAKER);
-        hubFork.USDC.approve(address(vaults[hubFork.chainId]), mmAmount);
-        vaults[hubFork.chainId].deposit(address(hubFork.USDC), mmAmount);
-        hubFork.USDC.approve(COMET_ADDR, mmAmount);
-        comet.supplyTo(MARKET_MAKER, address(hubFork.USDC), mmAmount);
+        hubFork.USDC.approve(address(vaults[hubFork.chainId]), MM_INITIAL_BALANCE);
+        vaults[hubFork.chainId].deposit(address(hubFork.USDC), MM_INITIAL_BALANCE);
+        hubFork.USDC.approve(COMET_ADDR, MM_INITIAL_BALANCE);
+        comet.supplyTo(MARKET_MAKER, address(hubFork.USDC), MM_INITIAL_BALANCE);
         vm.stopPrank();
 
         vm.prank(USER);
@@ -91,6 +91,8 @@ contract SynoVaultTest is BaseSynoVaultTest {
     }
 
     function testDepositRedeemToken() public {
+        switchToSpoke();
+
         uint256 amount = 100e6;
         mintUSDC(spokeFork.chainId, USER, amount);
         IERC20 usdc = usdcIERC20(spokeFork);
@@ -101,18 +103,20 @@ contract SynoVaultTest is BaseSynoVaultTest {
         vm.stopPrank();
         IERC20 synoUsdc = IERC20(vaults[spokeFork.chainId].getSynoTokenByUnderlyingToken(address(usdc)));
         assertEq(synoUsdc.balanceOf(USER), amount, "user did not receive syno usdc");
-        assertEq(synoUsdc.totalSupply(), amount, "syno usdc total supply is not correct");
-        assertEq(usdc.balanceOf(address(vaults[spokeFork.chainId])), amount, "vault did not receive usdc");
+        assertEq(synoUsdc.totalSupply(), MM_INITIAL_BALANCE + amount, "syno usdc total supply is not correct");
+        assertEq(usdc.balanceOf(address(vaults[spokeFork.chainId])), MM_INITIAL_BALANCE + amount, "vault did not receive usdc");
 
         vm.prank(USER);
         vaults[spokeFork.chainId].redeem(address(synoUsdc), amount);
         assertEq(synoUsdc.balanceOf(USER), 0, "user did not redeem syno usdc");
-        assertEq(synoUsdc.totalSupply(), 0, "syno usdc total supply is not correct");
-        assertEq(usdc.balanceOf(address(vaults[spokeFork.chainId])), 0, "vault did not receive usdc");
+        assertEq(synoUsdc.totalSupply(), MM_INITIAL_BALANCE, "syno usdc total supply is not correct");
+        assertEq(usdc.balanceOf(address(vaults[spokeFork.chainId])), MM_INITIAL_BALANCE, "vault did not send usdc");
         assertEq(usdc.balanceOf(USER), amount, "user did not receive usdc");
     }
 
     function testCrossChainAssetTransfer() public {
+        switchToSpoke();
+
         uint256 amount = 100e6;
         mintUSDC(spokeFork.chainId, USER, amount);
         IERC20 usdc = usdcIERC20(spokeFork);
@@ -131,24 +135,23 @@ contract SynoVaultTest is BaseSynoVaultTest {
         );
         vm.stopPrank();
         // assert USDC still in vault
-        assertEq(usdc.balanceOf(address(vaults[spokeFork.chainId])), amount, "vault did not receive usdc");
+        assertEq(usdc.balanceOf(address(vaults[spokeFork.chainId])), MM_INITIAL_BALANCE + amount, "vault did not receive usdc");
         // assert spoke-side synoUsdc is burned
         assertEq(synoUsdc.balanceOf(USER), 0, "synoUsdc is not burned");
-        assertEq(synoUsdc.totalSupply(), 0, "synoUsdc total supply is not correct");
+        assertEq(synoUsdc.totalSupply(), MM_INITIAL_BALANCE, "synoUsdc total supply is not correct");
         deliverMessages();
 
         switchToHub();
         IERC20 hubSynoUsdc = IERC20(vaults[hubFork.chainId].getSynoTokenByUnderlyingToken(address(hubFork.USDC)));
         assertEq(hubSynoUsdc.balanceOf(USER), amount, "user did not receive hub syno usdc");
-        assertEq(hubSynoUsdc.totalSupply(), amount, "hub syno usdc total supply is not correct");
+        assertEq(hubSynoUsdc.totalSupply(), MM_INITIAL_BALANCE + amount, "hub syno usdc total supply is not correct");
 
         vm.prank(USER);
         vaults[hubFork.chainId].redeem(address(hubSynoUsdc), amount);
         assertEq(hubSynoUsdc.balanceOf(USER), 0, "user did not redeem hub syno usdc");
         assertEq(hubFork.USDC.balanceOf(USER), amount, "user did not receive usdc");
-        assertEq(hubFork.USDC.balanceOf(address(vaults[hubFork.chainId])), 0, "vault did not receive usdc");
-        assertEq(hubSynoUsdc.balanceOf(USER), 0, "user did not redeem hub syno usdc");
-        assertEq(hubSynoUsdc.totalSupply(), 0, "hub syno usdc total supply is not correct");
+        assertEq(hubFork.USDC.balanceOf(address(vaults[hubFork.chainId])), MM_INITIAL_BALANCE - amount, "vault did not send usdc");
+        assertEq(hubSynoUsdc.totalSupply(), MM_INITIAL_BALANCE, "hub syno usdc total supply is not correct");
     }
 
     function testSynoVaultSupplyAndWithdraw() public {

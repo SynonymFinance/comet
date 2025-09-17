@@ -18,6 +18,12 @@ const NETWORK_CONFIGS = {
     weth: '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2',
     usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48',
   },
+  optimism: {
+    chainId: 24,
+    wormholeTunnel: '0xa9F5B7131b59E768ae4EB085a7E57efB904279e1',
+    weth: '0x4200000000000000000000000000000000000006',
+    usdc: '0x0b2c639c533813f4aa9d7837caf62653d097ff85',
+  }
 };
 
 task('deploy-syno-bridge', 'Deploy SynoBridge')
